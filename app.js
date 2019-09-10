@@ -9,6 +9,8 @@ const session = require("express-session");
 const passport = require("passport");
 const passportLocalMongoose = require("passport-local-mongoose");
 const GoogleStrategy = require("passport-google-oauth20").Strategy;
+const VKontakteStrategy = require('passport-vkontakte').Strategy;
+const FacebookStrategy = require("passport-facebook").Strategy;
 const findOrCreate = require("mongoose-findorcreate");
 
 const app = express();
@@ -16,7 +18,9 @@ const app = express();
 const userSchema = new mongoose.Schema({
     email: String,
     password: String,
-    googleId: String
+    googleId: String,
+    vkontakteId: String,
+    facebookId: String
 });
 
 userSchema.plugin(passportLocalMongoose);
@@ -41,11 +45,11 @@ mongoose.set('useCreateIndex', true);
 
 passport.use(User.createStrategy());
 
-passport.serializeUser(function(user, done){
+passport.serializeUser(function(user, done) {
     done(null, user.id);
 });
-passport.deserializeUser(function(id, done){
-    User.findById(id, function(err, user){
+passport.deserializeUser(function(id, done) {
+    User.findById(id, function(err, user) {
         done(err, user);
     })
 });
@@ -57,12 +61,42 @@ passport.use(new GoogleStrategy({
         userProfileURL: "https://www.googleapis.com/oauth2/v3/userinfo"
     },
     function(accessToken, refreshToken, profile, cb) {
-        console.log(profile);
+        //console.log(profile);
 
         User.findOrCreate({
             googleId: profile.id
         }, function(err, user) {
             return cb(err, user);
+        });
+    }
+));
+
+passport.use(new FacebookStrategy({
+        clientID: process.env.FACEBOOK_ID,
+        clientSecret: process.env.FACEBOOK_SECRET,
+        callbackURL: "http://localhost:3000/auth/facebook/secrets"
+    },
+    function(accessToken, refreshToken, profile, cb) {
+        console.log(profile);
+        User.findOrCreate({
+            facebookId: profile.id
+        }, function(err, user) {
+            return cb(err, user);
+        });
+    }
+));
+
+passport.use(new VKontakteStrategy({
+        clientID: process.env.VK_APP_ID, // VK.com docs call it 'API ID', 'app_id', 'api_id', 'client_id' or 'apiId'
+        clientSecret: process.env.VK_SECRET,
+        callbackURL: "http://localhost:3000/auth/vkontakte/secrets"
+    },
+    function(accessToken, refreshToken, params, profile, done) {
+        //console.log(params.user_id); // getting the email
+        User.findOrCreate({
+            vkontakteId: profile.id
+        }, function(err, user) {
+            return done(err, user);
         });
     }
 ));
@@ -113,11 +147,42 @@ app.get("/auth/google",
     // })
 );
 
-app.get("/auth/google/secrets", passport.authenticate("google", {
+app.get("/auth/vkontakte",
+    passport.authenticate('vkontakte', {
+        display: 'page'
+    }),
+    function(req, res) {
+        // The request will be redirected to vk.com for authentication, so
+        // this function will not be called.
+    });
+
+app.get('/auth/facebook',
+    passport.authenticate('facebook'));
+
+app.get('/auth/facebook/secrets',
+    passport.authenticate('facebook', {
+        failureRedirect: '/login'
+    }),
+    function(req, res) {
+        // Successful authentication, redirect home.
+        res.redirect('/secrets');
+    });
+
+app.get("/auth/google/secrets",
+    passport.authenticate("google", {
         failureRedirect: "/login"
     }),
     function(req, res) {
         res.redirect("/secrets")
+    });
+
+app.get('/auth/vkontakte/secrets',
+    passport.authenticate('vkontakte', {
+        failureRedirect: '/login'
+    }),
+    function(req, res) {
+        // Successful authentication, redirect home.
+        res.redirect('/secrets');
     });
 
 app.post("/register", function(req, res) {
